@@ -337,7 +337,7 @@ def sync_existing(repo_dir: Path, full_name: str, dry_run: bool, command_timeout
     if dry_run:
         return "would fetch/ff"
 
-    fetch = run(["git", "fetch", "origin"], cwd=repo_dir, timeout=180)
+    fetch = run(["git", "fetch", "--no-auto-maintenance", "origin"], cwd=repo_dir, timeout=180)
     if fetch.returncode != 0:
         return command_failure("fetch", fetch)
     remote_branch = run(["git", "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"], cwd=repo_dir, timeout=command_timeout)

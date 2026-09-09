@@ -60,7 +60,7 @@ class SafeSyncTests(unittest.TestCase):
         ])
         self.assertEqual(result, "skip dirty")
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertIn(["git", "fetch", "origin"], commands)
+        self.assertIn(["git", "fetch", "--no-auto-maintenance", "origin"], commands)
         self.assertFalse(any("merge" in command for command in commands))
 
     def test_clean_behind_repo_fast_forwards(self):
