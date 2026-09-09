@@ -365,7 +365,7 @@ def sync_existing(repo_dir: Path, full_name: str, dry_run: bool, command_timeout
         return "local ahead"
 
     if ahead == 0:
-        ff = run(["git", "-c", "maintenance.auto=false", "merge", "--ff-only", f"origin/{branch}"], cwd=repo_dir, timeout=180)
+        ff = run(["git", "-c", "maintenance.auto=false", "merge", "--ff-only", f"origin/{branch}"], cwd=repo_dir, timeout=900)
         return "updated" if ff.returncode == 0 else command_failure("fast-forward", ff)
 
     if not interactive:
