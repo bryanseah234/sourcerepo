@@ -20,16 +20,17 @@ def completed(stdout="", code=0, stderr=""):
 class SafeSyncTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows Git launches a child process")
     def test_timeout_stops_children_holding_output_pipes(self):
-        child = "import time; time.sleep(20)"
+        child = "import time; time.sleep(30)"
         parent = (
             "import subprocess, sys, time; "
             f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
-            "time.sleep(20)"
+            "time.sleep(30)"
         )
         started = time.monotonic()
         result = sync.run([sys.executable, "-c", parent], timeout=1)
         self.assertEqual(result.returncode, 124)
-        self.assertLess(time.monotonic() - started, 8)
+        # Allow the bounded 5s tree cleanup + 5s pipe drain and Windows startup.
+        self.assertLess(time.monotonic() - started, 15)
 
     def sync_with(self, results):
         with patch.object(sync, "run", side_effect=results) as run:
@@ -41,6 +42,16 @@ class SafeSyncTests(unittest.TestCase):
         self.assertIn("branch check failed", result)
         self.assertIn("timed out", result)
         self.assertEqual(run.call_count, 1)
+
+    def test_detached_head_is_left_untouched(self):
+        result, run = self.sync_with([completed(code=1)])
+        self.assertEqual(result, "skip detached")
+        self.assertEqual(run.call_count, 1)
+
+    def test_empty_remote_has_no_branch_to_update(self):
+        result, run = self.sync_with([completed("main\n"), completed(), completed(code=1)])
+        self.assertEqual(result, "skip no origin/main")
+        self.assertEqual(run.call_count, 3)
 
     def test_status_timeout_is_a_failure_not_dirty(self):
         result, run = self.sync_with([
@@ -69,7 +80,7 @@ class SafeSyncTests(unittest.TestCase):
             completed("0\n"), completed("3\n"), completed(),
         ])
         self.assertEqual(result, "updated")
-        self.assertEqual(run.call_args.args[0], ["git", "merge", "--ff-only", "origin/main"])
+        self.assertEqual(run.call_args.args[0], ["git", "-c", "maintenance.auto=false", "merge", "--ff-only", "origin/main"])
 
     def test_failed_fast_forward_is_not_mislabeled_as_divergence(self):
         result, _ = self.sync_with([

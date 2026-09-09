@@ -219,11 +219,13 @@ def has_tracked_changes(repo_dir: Path, command_timeout: int) -> bool:
 
 
 def current_branch(repo_dir: Path, command_timeout: int) -> str | None:
-    proc = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, timeout=command_timeout)
+    proc = run(["git", "symbolic-ref", "--quiet", "--short", "HEAD"], cwd=repo_dir, timeout=command_timeout)
+    if proc.returncode == 1:
+        return None
     if proc.returncode != 0:
         raise RuntimeError(command_failure("branch check", proc))
     branch = proc.stdout.strip()
-    return None if branch == "HEAD" else branch
+    return branch or None
 
 
 def count_revs(repo_dir: Path, revspec: str, command_timeout: int) -> int | None:
@@ -363,7 +365,7 @@ def sync_existing(repo_dir: Path, full_name: str, dry_run: bool, command_timeout
         return "local ahead"
 
     if ahead == 0:
-        ff = run(["git", "merge", "--ff-only", f"origin/{branch}"], cwd=repo_dir, timeout=180)
+        ff = run(["git", "-c", "maintenance.auto=false", "merge", "--ff-only", f"origin/{branch}"], cwd=repo_dir, timeout=180)
         return "updated" if ff.returncode == 0 else command_failure("fast-forward", ff)
 
     if not interactive:

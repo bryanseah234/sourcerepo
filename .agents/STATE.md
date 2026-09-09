@@ -1,6 +1,6 @@
 # Workspace sync maintenance — 2026-09-10
 
-Safe mode now prints discovery and per-repository progress, distinguishes Git failures from dirty/detached branches, and returns failure status when commands fail. Windows timeouts terminate the launched process tree so portable Git children cannot hold output pipes open. Local metadata/status checks default to 30 seconds. Nine regression checks cover timeout behavior, failed checks and safe fast-forward decisions. Existing local clone-layout work is excluded from this release.
+Safe mode now prints discovery and per-repository progress, distinguishes Git failures from dirty/detached branches, and returns failure status when commands fail. Windows timeouts terminate the launched process tree so portable Git children cannot hold output pipes open. Local metadata/status checks default to 30 seconds. Eleven regression checks cover timeout behavior, failed checks, empty repositories and safe fast-forward decisions. Automatic object repacking is deferred during both bulk fetch and fast-forward commands, without changing persistent Git settings. Existing local clone-layout work is excluded from this release.
 
 Previous handoff follows.
 
