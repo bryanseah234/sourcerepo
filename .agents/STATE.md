@@ -1,3 +1,9 @@
+# Workspace sync maintenance — 2026-09-10
+
+Safe mode now prints discovery and per-repository progress, distinguishes Git failures from dirty/detached branches, and returns failure status when commands fail. Windows timeouts terminate the launched process tree so portable Git children cannot hold output pipes open. Local metadata/status checks default to 30 seconds. Nine regression checks cover timeout behavior, failed checks and safe fast-forward decisions. Existing local clone-layout work is excluded from this release.
+
+Previous handoff follows.
+
 # STATE
 
 **Updated:** 2026-08-09 SGT

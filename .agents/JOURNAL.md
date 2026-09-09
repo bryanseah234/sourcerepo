@@ -8,3 +8,5 @@
 - 2026-08-09: Added a committed MOLT handoff under `.agents/handoffs/` so
   future harnesses can resume from either `_shell/PROGRESS.md` or the repo-local
   handoff.
+
+- 2026-09-10: Fixed workspace sync progress, failure classification and Windows child-process timeouts; use 30-second local-check defaults. Keep safe mode limited to clean fast-forwards and preserve unrelated local clone-layout work.
