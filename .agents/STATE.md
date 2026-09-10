@@ -1,8 +1,10 @@
 # Config-sync preservation — 2026-09-10
 
-Work is in progress on `maintenance/config-preservation-20260910`, based on published helper release `22d2798`. Source review found broad downstream deletion of documentation, skills, dot directories and editor workspaces; replacement of shared template directories also removed custom files. Topic API errors previously bypassed opt-outs.
+The preservation fix is implemented on `maintenance/config-preservation-20260910`, based on published helper release `22d2798`. Source review found broad downstream deletion of documentation, skills, dot directories and editor workspaces; replacement of shared template directories also removed custom files. Topic API errors previously bypassed opt-outs.
 
-The local fix preserves unlisted app files, merges managed directories, refuses linked/type-conflicting destinations, checks metadata before cloning or changing archive state, and reports partial failures through a nonzero exit status. Regression fixtures use temporary local Git repositories and a fake GitHub CLI with network Git transports disabled. The first Windows attempt failed during Git Bash process creation before the script could be validated; Linux verification and release are pending. No organization-wide workflow was dispatched. Existing workspace edits remain separate.
+Config sync now preserves unlisted app files, merges managed directories, refuses linked/type-conflicting destinations, checks metadata before cloning or changing archive state, and reports partial failures through a nonzero exit status. All eleven fixture checks passed in Linux CI for code commit `c510115`: https://github.com/hongyime/sourcerepo/actions/runs/34453272672. Tests use temporary local Git repositories and a fake GitHub CLI with network Git transports disabled. The local Windows attempt failed during Git Bash process creation before tests ran; local WSL startup also failed. Those are environment limitations, not baseline application-test results.
+
+The weekly schedule and downstream skip-CI messages are retained. No organization-wide workflow was dispatched, so its next live scheduled execution remains unverified. Existing workspace edits remain separate. Historical app files removed by earlier syncs require per-repository Git-history review; this fix prevents repeat deletion but does not restore unknown historical content.
 
 # Workspace sync maintenance — 2026-09-10
 
