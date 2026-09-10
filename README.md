@@ -20,6 +20,26 @@ Previously ran every 3 hours across 3 workflows → hit spending limit repeatedl
 
 The sync script commits config files to every target repo with `chore(config): sync from sourcerepo [skip ci]`. The `[skip ci]` marker tells GitHub Actions to skip triggering downstream workflows (CI, CodeQL, Scorecard, etc) in each target repo. Without this, one sync run would fan out to trigger 90+ repos × N workflows = quota-exhausting.
 
+### Application file preservation
+
+Config sync updates the configured shared paths. It preserves downstream
+documentation, skills, dot directories, editor workspaces and other unlisted
+application files. Shared template directories are merged so custom forms remain.
+Linked destinations and file/directory conflicts stop that repository's update
+without publishing a partial copy.
+
+Repository enumeration must succeed before work starts. Topic lookup failures
+skip the affected repository and make the job fail; `no-config-sync` is checked
+before cloning or changing archive state. Metadata, clone, copy and push failures
+return a nonzero status. Existing weekly scheduling and downstream skip-CI commit
+messages are unchanged. Files removed by earlier syncs need a separate review of
+Git history; this change prevents repeat deletion and does not guess how to restore them.
+
+Run `python -B -m unittest discover -s tests -p test_config_sync.py -v` with
+Python 3.12, Bash, Git and jq. The tests use temporary local repositories and a
+fake GitHub CLI; they cannot push over network Git transports or change real
+repository settings. Linux CI also verifies symlink preservation.
+
 ## What gets synced
 
 Every non-disabled repo (**including archived** — see below) receives:

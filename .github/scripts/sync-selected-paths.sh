@@ -22,27 +22,12 @@ CASE_PATHS_READY=false
 # Personal repos are the profile README + Pages site (kept under the personal
 # account because GitHub's magic profile/pages only render at the matching user
 # path). Any future personal-account repos are picked up automatically.
-REPOS_JSON="$( { \
-  gh api --paginate "orgs/hongyime/repos?per_page=100"; \
-  gh api --paginate "user/repos?per_page=100&affiliation=owner"; \
-  } | jq -s 'add | unique_by(.full_name) | map(select(.disabled == false and .fork == false))')"
-
-# Dot files/folders that are NEVER deleted from target repos
-EXEMPT_DOTS=(
-  ".git" ".github" ".gitignore" ".gitattributes" ".gitmodules"
-  ".agents"
-  ".editorconfig" ".nvmrc" ".node-version" ".python-version" ".tool-versions"
-  ".prettierrc" ".prettierrc.js" ".prettierrc.cjs" ".prettierrc.json"
-  ".prettierrc.yml" ".prettierrc.yaml" ".prettierignore"
-  ".eslintrc" ".eslintrc.js" ".eslintrc.cjs" ".eslintrc.json"
-  ".eslintrc.yml" ".eslintrc.yaml" ".eslintignore"
-  ".stylelintrc" ".stylelintrc.js" ".stylelintrc.json" ".stylelintrc.yml"
-  ".babelrc" ".babelrc.js" ".babelrc.cjs" ".babelrc.json"
-  ".browserslistrc" ".dockerignore"
-  ".npmrc" ".yarnrc" ".yarnrc.yml" ".pnpmfile.cjs"
-  ".env.example" ".env.template" ".env.sample"
-  ".sourcery.yml" ".deepsource.toml" ".htaccess"
-)
+# Fetch separately: an earlier failure inside a command group must not be
+# hidden by a successful later request and reported as a complete sync.
+ORG_REPOS_JSON="$(gh api --paginate "orgs/hongyime/repos?per_page=100")"
+PERSONAL_REPOS_JSON="$(gh api --paginate "user/repos?per_page=100&affiliation=owner")"
+REPOS_JSON="$(printf '%s\n%s\n' "$ORG_REPOS_JSON" "$PERSONAL_REPOS_JSON" |
+  jq -s 'add | unique_by(.full_name) | map(select(.disabled == false and .fork == false))')"
 
 GITIGNORE_MARKER="# AI / editor dot directories (managed via sourcerepo)"
 GITIGNORE_END_MARKER="# End AI / editor dot directories (managed via sourcerepo)"
@@ -59,19 +44,45 @@ retry() {
   done
 }
 
+validate_copy_destination() {
+  local src="$1" dst="$2" parent="$2"
+  # A managed path must not redirect a copy through app-owned links.
+  while [ "$parent" != "." ] && [ "$parent" != "/" ]; do
+    if [ -L "$parent" ]; then
+      echo "Preserving linked destination; config copy refused: $dst" >&2
+      return 1
+    fi
+    parent="$(dirname "$parent")"
+  done
+  if [ -L "$src" ] || { [ -e "$dst" ] && {
+    { [ -f "$src" ] && [ ! -f "$dst" ]; } ||
+    { [ -d "$src" ] && [ ! -d "$dst" ]; }
+  }; }; then
+    echo "Preserving conflicting destination; config copy refused: $dst" >&2
+    return 1
+  fi
+}
+
 copy_if_exists() {
   local src="$1"
   local dst="$2"
   local dst_dir
   dst_dir="$(dirname "$dst")"
-  mkdir -p "$dst_dir"
-
   if [ -f "$src" ]; then
-    cp -f "$src" "$dst"
+    validate_copy_destination "$src" "$dst" || return 1
+    mkdir -p "$dst_dir" || return 1
+    cp -f "$src" "$dst" || return 1
     echo "Copied file $src -> $dst"
   elif [ -d "$src" ]; then
-    rm -rf "$dst"
-    cp -r "$src" "$dst"
+    validate_copy_destination "$src" "$dst" || return 1
+    # Validate the complete managed tree, then merge it. Files absent from
+    # sourcerepo remain owned by the application and must survive the sync.
+    local entry
+    while IFS= read -r -d '' entry; do
+      validate_copy_destination "$entry" "$dst/${entry#"$src"/}" || return 1
+    done < <(find "$src" -mindepth 1 -print0)
+    mkdir -p "$dst" || return 1
+    cp -r "$src/." "$dst/" || return 1
     echo "Copied directory $src -> $dst"
   else
     echo "Source missing, skipping copy: $src"
@@ -143,24 +154,6 @@ should_skip_case_conflicting_sync() {
       return 1
       ;;
   esac
-}
-
-delete_unlisted_dot_items() {
-  for item in .[!.]* ; do
-    [ -e "$item" ] || continue
-    local exempt=false
-    for e in "${EXEMPT_DOTS[@]}"; do
-      [[ "$item" == "$e" ]] && exempt=true && break
-    done
-    if [ "$exempt" = false ]; then
-      rm -rf "$item"
-      echo "Deleted dot item: $item"
-    fi
-  done
-}
-
-delete_code_workspace_files() {
-  find . -path "./.git" -prune -o -name "*.code-workspace" -print -exec rm -f {} \;
 }
 
 inject_gitignore_entries() {
@@ -266,6 +259,19 @@ while read -r repo; do
     continue
   fi
 
+  # Read opt-outs before cloning or changing archive state. Unknown metadata
+  # is a failed check, never permission to replace application configuration.
+  if ! REPO_TOPICS="$(gh api "repos/$FULL_NAME/topics" --jq '.names | join(",")')"; then
+    echo "Cannot read topics for $FULL_NAME; skipping config sync" >&2
+    FAILED_REPOS+=("$REPO_NAME")
+    continue
+  fi
+  echo "Topics: ${REPO_TOPICS:-none}"
+  if [[ ",$REPO_TOPICS," == *",no-config-sync,"* ]]; then
+    echo "Skipping all config sync for $REPO_NAME (topic: no-config-sync)"
+    continue
+  fi
+
   # Temporarily unarchive so we can push to it.
   UNARCHIVED_HERE=false
   if [ "$ARCHIVED" = "true" ]; then
@@ -302,26 +308,6 @@ while read -r repo; do
   }
   CASE_PATHS_READY=false
 
-  # ── Per-repo opt-out via GitHub topics ────────────────────────────────
-  # Repos can opt out of specific sync items by setting topics:
-  #   • `keep-lfs`      → skip .gitattributes overwrite + skip lfs-guard.yml
-  #                       (repo legitimately needs Git LFS)
-  #   • `no-config-sync`→ skip ALL config sync for this repo (opt out entirely,
-  #                       but repo still gets settings + secrets from other jobs)
-  # Set with: gh repo edit <owner>/<repo> --add-topic keep-lfs
-  REPO_TOPICS="$(gh api "repos/$FULL_NAME/topics" --jq '.names | join(",")' 2>/dev/null || echo "")"
-  echo "Topics: ${REPO_TOPICS:-none}"
-
-  if [[ ",$REPO_TOPICS," == *",no-config-sync,"* ]]; then
-    echo "Skipping all config sync for $REPO_NAME (topic: no-config-sync)"
-    cd "$WORKDIR" || exit 1
-    rm -rf "$TARGET_DIR"
-    if [ "$UNARCHIVED_HERE" = "true" ]; then
-      rearchive_repo "$FULL_NAME" || REARCHIVE_FAILED_REPOS+=("$REPO_NAME")
-    fi
-    continue
-  fi
-
   # Filter SYNC_ITEMS if repo opted out of LFS enforcement.
   EFFECTIVE_SYNC_ITEMS="$SYNC_ITEMS"
   if [[ ",$REPO_TOPICS," == *",keep-lfs,"* ]]; then
@@ -330,15 +316,29 @@ while read -r repo; do
   fi
 
   # Copy content from sourcerepo
+  COPY_FAILED=false
   while IFS='|' read -r src dst; do
     [ -z "$src" ] && continue
     if should_skip_case_conflicting_sync "$dst"; then
       continue
     fi
     remove_case_conflicts_for "$dst"
-    copy_if_exists "$WORKDIR/$src" "$dst"
+    if ! copy_if_exists "$WORKDIR/$src" "$dst"; then
+      FAILED_REPOS+=("$REPO_NAME")
+      COPY_FAILED=true
+      break
+    fi
     force_stage_path "$dst"
   done <<< "$EFFECTIVE_SYNC_ITEMS"
+
+  if [ "$COPY_FAILED" = "true" ]; then
+    cd "$WORKDIR" || exit 1
+    rm -rf "$TARGET_DIR"
+    if [ "$UNARCHIVED_HERE" = "true" ]; then
+      rearchive_repo "$FULL_NAME" || REARCHIVE_FAILED_REPOS+=("$REPO_NAME")
+    fi
+    continue
+  fi
 
   # ── Per-repo heartbeat cron staggering (added 2026-08-04) ─────────────
   # All ~60 private repos previously shared the same Monday 09:00 UTC cron,
@@ -357,23 +357,8 @@ while read -r repo; do
     fi
   fi
 
-  delete_unlisted_dot_items
-  delete_code_workspace_files
-
-  # ── Cleanup of sourcerepo-only artifacts ──────────────────────────────
-  # We remove `skills`, `skills-lock.json`, `docs` because those live in
-  # sourcerepo but must NOT be copied into downstream repos (they're
-  # per-agent-tool caches / manifests, not app code).
-  #
-  # DO NOT add `templates` here. Some downstream repos are Flask apps
-  # whose `templates/` directory is the app's own Jinja templates
-  # (findabus.html, index.html, etc.). Sweeping them broke sgbuslaobu +
-  # validatenric production 500s until commit e69a823/f292e0b restored
-  # them from git history (2026-08-05). If skills-related templates need
-  # exclusion, they're already scoped under `skills/` above.
-  for item in skills skills-lock.json docs; do
-    [ -e "$item" ] && rm -rf "$item" && echo "Removed: $item"
-  done
+  # Unlisted application files, dot directories, skills, documentation and
+  # editor workspaces are outside this sync's ownership. Preserve them.
 
   inject_gitignore_entries
 
@@ -412,13 +397,18 @@ while read -r repo; do
 done < <(echo "$REPOS_JSON" | jq -c '.[] | {name, archived, disabled, fork, default_branch, owner}')
 
 if [ "${#FAILED_REPOS[@]}" -gt 0 ]; then
-  echo "Clone/unarchive failures: ${FAILED_REPOS[*]}"
+  echo "Metadata/clone/unarchive/copy failures: ${FAILED_REPOS[*]}"
 fi
+
 if [ "${#PUSH_FAILED_REPOS[@]}" -gt 0 ]; then
   echo "Push failures: ${PUSH_FAILED_REPOS[*]}"
 fi
 if [ "${#REARCHIVE_FAILED_REPOS[@]}" -gt 0 ]; then
   echo "⚠️  RE-ARCHIVE FAILURES (manual action required): ${REARCHIVE_FAILED_REPOS[*]}"
   # Exit non-zero to surface this loudly in the Actions UI.
+  exit 1
+fi
+
+if [ "${#FAILED_REPOS[@]}" -gt 0 ] || [ "${#PUSH_FAILED_REPOS[@]}" -gt 0 ]; then
   exit 1
 fi

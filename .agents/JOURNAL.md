@@ -10,3 +10,5 @@
   handoff.
 
 - 2026-09-10: Fixed workspace sync progress, failure classification and Windows child-process timeouts; use 30-second local-check defaults. Keep safe mode limited to clean fast-forwards and preserve unrelated local clone-layout work.
+
+- 2026-09-10: Prioritized config-sync preservation after source review found deletion of app-owned files and opt-outs bypassed on metadata errors. Validate with temporary repositories before publishing; retain the weekly schedule and skip-CI downstream commits.

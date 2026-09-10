@@ -1,3 +1,9 @@
+# Config-sync preservation — 2026-09-10
+
+Work is in progress on `maintenance/config-preservation-20260910`, based on published helper release `22d2798`. Source review found broad downstream deletion of documentation, skills, dot directories and editor workspaces; replacement of shared template directories also removed custom files. Topic API errors previously bypassed opt-outs.
+
+The local fix preserves unlisted app files, merges managed directories, refuses linked/type-conflicting destinations, checks metadata before cloning or changing archive state, and reports partial failures through a nonzero exit status. Regression fixtures use temporary local Git repositories and a fake GitHub CLI with network Git transports disabled. The first Windows attempt failed during Git Bash process creation before the script could be validated; Linux verification and release are pending. No organization-wide workflow was dispatched. Existing workspace edits remain separate.
+
 # Workspace sync maintenance — 2026-09-10
 
 Safe mode now prints discovery and per-repository progress, distinguishes Git failures from dirty/detached branches, and returns failure status when commands fail. Windows timeouts terminate the launched process tree so portable Git children cannot hold output pipes open. Local metadata/status checks default to 30 seconds. Eleven regression checks cover timeout behavior, failed checks, empty repositories and safe fast-forward decisions. Automatic object repacking is deferred during both bulk fetch and fast-forward commands, without changing persistent Git settings. Existing local clone-layout work is excluded from this release.

@@ -1,0 +1,39 @@
+name: Config sync preservation
+
+on:
+  push:
+    paths:
+      - '.github/scripts/sync-selected-paths.sh'
+      - 'tests/test_config_sync.py'
+      - '.github/workflows/config-sync-tests.yml'
+  pull_request:
+    paths:
+      - '.github/scripts/sync-selected-paths.sh'
+      - 'tests/test_config_sync.py'
+      - '.github/workflows/config-sync-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: config-sync-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check required tools and shell syntax
+        run: |
+          command -v git
+          command -v jq
+          bash -n .github/scripts/sync-selected-paths.sh
+      - name: Verify preservation with local repository fixtures
+        run: python -B -m unittest discover -s tests -p test_config_sync.py -v
